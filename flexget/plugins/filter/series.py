@@ -563,7 +563,8 @@ class FilterSeriesBase(object):
                 # Quality options
                 'quality': {'type': 'string', 'format': 'quality_requirements'},
                 'qualities': {'type': 'array', 'items': {'type': 'string', 'format': 'quality_requirements'}},
-                'timeframe': {'type': 'string', 'format': 'interval'},
+                'timeframe': {'type': 'string', 'format': 'regex'},
+                'deadline': {'type': 'string', 'format': 'regex'},
                 'upgrade': {'type': 'boolean'},
                 'target': {'type': 'string', 'format': 'quality_requirements'},
                 # Specials
@@ -1023,6 +1024,11 @@ class FilterSeries(SeriesDatabase, FilterSeriesBase):
 
                 # We didn't make a quality target match, check timeframe to see
                 # if we should get something anyway
+                if 'deadline' in config:
+                    log.debug('HENK PATAT')
+                    if self.process_deadline(task, config, ep, entries):
+                        continue
+                    reason = 'Timeframe expired, choosing best available'
                 if 'timeframe' in config:
                     if self.process_timeframe(task, config, ep, entries):
                         continue
@@ -1164,15 +1170,16 @@ class FilterSeries(SeriesDatabase, FilterSeriesBase):
                     entry.reject('Too much in the future from latest downloaded episode %s. '
                                  'See `--disable-advancement` if this should be downloaded.' % latest.identifier)
                 return True
-
+    
+    """
     def process_timeframe(self, task, config, episode, entries):
-        """
+        
         Runs the timeframe logic to determine if we should wait for a better quality.
         Saves current best to backlog if timeframe has not expired.
 
         :returns: True - if we should keep the quality (or qualities) restriction
                   False - if the quality restriction should be released, due to timeframe expiring
-        """
+        
 
         if 'timeframe' not in config:
             return True
@@ -1207,6 +1214,39 @@ class FilterSeries(SeriesDatabase, FilterSeriesBase):
 
             log.info('Timeframe waiting %s for %sh:%smin, currently best is %s' %
                      (episode.series.name, hours, minutes, best['title']))
+
+            # add best entry to backlog (backlog is able to handle duplicate adds)
+            if self.backlog:
+                self.backlog.add_backlog(task, best)
+            return True
+    """
+
+    def process_timeframe(self, task, config, episode, entries):
+        """
+        Runs the timeframe logic to determine if we should wait for a better quality.
+        Saves current best to backlog if timeframe has not expired.
+
+        :returns: True - if we should keep the quality (or qualities) restriction
+                  False - if the quality restriction should be released, due to timeframe expiring
+        """
+
+        if 'timeframe' not in config:
+            return True
+
+        best = entries[0]
+
+        # parse options
+        log.debug('deadline: %s', config['timeframe'])
+        deadline = datetime.time(datetime.strptime(config['timeframe'], "%H:%M"))
+        
+        stop = task.manager.options.stop_waiting.lower() == episode.series.name.lower()
+        if deadline <= datetime.time(datetime.now()) or stop:
+            # Expire timeframe, accept anything
+            log.info('Deadline expired, releasing quality restriction.')
+            return False
+        else:
+            log.info('Deadline waiting %s till %s, currently best is %s' %
+                     (episode.series.name, config['timeframe'], best['title']))
 
             # add best entry to backlog (backlog is able to handle duplicate adds)
             if self.backlog:
