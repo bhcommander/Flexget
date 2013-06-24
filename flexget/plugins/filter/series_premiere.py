@@ -1,7 +1,7 @@
 from __future__ import unicode_literals, division, absolute_import
 
 from flexget.plugin import register_plugin, priority, get_plugin_by_name
-from flexget.plugins.filter.series import FilterSeriesBase, normalize_series_name
+from flexget.plugins.filter.series import FilterSeriesBase, normalize_series_name, Series
 
 
 class FilterSeriesPremiere(FilterSeriesBase):
@@ -45,6 +45,7 @@ class FilterSeriesPremiere(FilterSeriesBase):
         if isinstance(config, dict):
             allow_seasonless = config.pop('allow_seasonless', False)
             group_settings = config
+        group_settings['identified_by'] = 'ep'
         # Generate a list of unique series that have premieres
         metainfo_series = get_plugin_by_name('metainfo_series')
         guess_entry = metainfo_series.instance.guess_entry
@@ -53,7 +54,11 @@ class FilterSeriesPremiere(FilterSeriesBase):
         for entry in task.entries:
             if guess_entry(entry, allow_seasonless=allow_seasonless):
                 if entry['series_season'] == 1 and entry['series_episode'] in (0, 1):
-                    guessed_series.setdefault(normalize_series_name(entry['series_name']), entry['series_name'])
+                    normalized_name = normalize_series_name(entry['series_name'])
+                    db_series = task.session.query(Series).filter(Series.name == normalized_name).first()
+                    if db_series and db_series.in_tasks:
+                        continue
+                    guessed_series.setdefault(normalized_name, entry['series_name'])
         # Reject any further episodes in those series
         for entry in task.entries:
             for series in guessed_series.itervalues():
